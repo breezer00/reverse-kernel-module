@@ -1,1 +1,12 @@
 *.sw[p-z]
+*.o
+*.ko
+modules.order
+Module.symvers
+reverse.mod.c
+reverse.mod.o
+.reverse.ko.cmd
+.reverse.mod.o.cmd
+.reverse.o.cmd
+.tmp_versions/
+
