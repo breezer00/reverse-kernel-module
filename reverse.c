@@ -4,11 +4,13 @@
 #include <linux/miscdevice.h>
 #include <linux/fs.h>
 #include <linux/slab.h>
+#include <linux/sched.h>
 
-static int reverse_open(struct inode *inode, struct file *file);
+static int reverse_open(struct inode *, struct file *);
+static ssize_t reverse_read(struct file *, char __user *, size_t , loff_t *);
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("Yanlei Zhao <breezer00@gmail.com>");
+MODULE_AUTHOR("Yanei Zhao <breezer00@gmail.com>");
 MODULE_DESCRIPTION("In-kernel phrase reverser");
 
 /* Accept user defined buffer size */
@@ -20,6 +22,7 @@ MODULE_PARM_DESC(buffer_size, "Internal buffer size");
 static struct file_operations reverse_fops = {
   .owner = THIS_MODULE,
   .open = reverse_open,
+  .read = reverse_read,
   .llseek = noop_llseek /* Set our device to be non-seekable */
 };
 
@@ -34,11 +37,13 @@ static struct miscdevice reverse_misc_device = {
 struct buffer {
   char *data, *end, *read_ptr;
   unsigned long size;
+  wait_queue_head_t read_queue;
 };
 
 static struct buffer *buffer_alloc(unsigned long size)
 {
   struct buffer *buf;
+  init_waitqueue_head(&buf->read_queue);
   buf = kzalloc(sizeof(*buf), GFP_KERNEL);
   if (unlikely(!buf))
     goto out;
@@ -64,6 +69,36 @@ static int reverse_open(struct inode *inode, struct file *file)
   return err;
 }
   
+static ssize_t reverse_read(struct file *file, char __user *out,
+    size_t size, loff_t *off)
+{
+  struct buffer *buf = file->private_data;
+  ssize_t result;
+  while (buf->read_ptr == buf->end) {
+    if (file->f_flags & O_NONBLOCK) {
+      result = -EAGAIN;
+      goto out;
+    }
+    if (wait_event_interruptible(buf->read_queue, buf->read_ptr !=
+          buf->end)) {
+      result = -ERESTARTSYS;
+      goto out;
+    }
+  }
+
+  size = min(size, (size_t)(buf->end - buf->read_ptr));
+  /* Don't trust anything outside of kernel */
+  if(copy_to_user(out, buf->read_ptr, size)){
+    result = -EFAULT;
+    goto out;
+  }
+  
+  buf->read_ptr += size;
+  result = size;
+
+  out:
+    return result;
+}
 
 static int __init reverse_init(void)
 {
