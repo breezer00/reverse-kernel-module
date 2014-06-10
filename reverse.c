@@ -23,6 +23,7 @@ static struct file_operations reverse_fops = {
   .owner = THIS_MODULE,
   .open = reverse_open,
   .read = reverse_read,
+  .write = reverse_write,
   .llseek = noop_llseek /* Set our device to be non-seekable */
 };
 
@@ -52,14 +53,6 @@ static struct buffer *buffer_alloc(unsigned long size)
   return buf;
 }
 
-/* static int buffer_free(struct buffer *buf) */
-/* { */
-/*   if(!buf) */
-/*     return -1; */
-/*   kfree(buf); */
-/*   return 0; */
-/* } */
-
 static int reverse_open(struct inode *inode, struct file *file)
 {
   int err = 0;
@@ -87,6 +80,7 @@ static ssize_t reverse_read(struct file *file, char __user *out,
   }
 
   size = min(size, (size_t)(buf->end - buf->read_ptr));
+
   /* Don't trust anything outside of kernel */
   if(copy_to_user(out, buf->read_ptr, size)){
     result = -EFAULT;
